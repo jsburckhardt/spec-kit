@@ -37,7 +37,7 @@ func (e *Executor) ExecuteScript(scriptName string, args ...string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tempFile)
+	defer func() { _ = os.Remove(tempFile) }()
 
 	// Execute the script
 	return e.executeScriptFile(tempFile, args...)
@@ -66,17 +66,17 @@ func (e *Executor) createTempScript(content []byte) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to create temp script", err)
 	}
-	defer tempFile.Close()
+	defer func() { _ = tempFile.Close() }()
 
 	if _, err := tempFile.Write(content); err != nil {
-		os.Remove(tempFile.Name())
+		_ = os.Remove(tempFile.Name())
 		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to write temp script", err)
 	}
 
 	// Make executable on Unix systems
 	if e.scriptType == config.ScriptTypeBash && runtime.GOOS != "windows" {
 		if err := os.Chmod(tempFile.Name(), 0755); err != nil {
-			os.Remove(tempFile.Name())
+			_ = os.Remove(tempFile.Name())
 			return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to make script executable", err)
 		}
 	}

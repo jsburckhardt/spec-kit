@@ -75,7 +75,7 @@ func (c *Client) GetLatestRelease(ctx context.Context) (*Release, error) {
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeNetworkError, "failed to get latest release", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.NewGitHubAPIError(
@@ -106,7 +106,7 @@ func (c *Client) DownloadAsset(ctx context.Context, asset ReleaseAsset, destPath
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeNetworkError, "failed to download asset", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return errors.NewGitHubAPIError(
@@ -117,7 +117,7 @@ func (c *Client) DownloadAsset(ctx context.Context, asset ReleaseAsset, destPath
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeFileSystemError, "failed to create destination file", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var written int64
 	buffer := make([]byte, 32*1024) // 32KB buffer

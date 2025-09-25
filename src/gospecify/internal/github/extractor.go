@@ -30,7 +30,7 @@ func (e *Extractor) ExtractZip(zipPath string, progressFn func(int64, int64)) er
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeFileSystemError, "failed to open zip file", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Calculate total size for progress
 	var totalSize int64
@@ -57,7 +57,7 @@ func (e *Extractor) extractFile(file *zip.File, extractedSize *int64, totalSize 
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeFileSystemError, "failed to open file in zip", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// Construct destination path
 	destPath := filepath.Join(e.destDir, file.Name)
@@ -80,7 +80,7 @@ func (e *Extractor) extractFile(file *zip.File, extractedSize *int64, totalSize 
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeFileSystemError, "failed to create destination file", err)
 	}
-	defer dest.Close()
+	defer func() { _ = dest.Close() }()
 
 	// Copy file contents
 	written, err := io.Copy(dest, src)
