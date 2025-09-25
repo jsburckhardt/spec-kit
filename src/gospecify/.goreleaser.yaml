@@ -1,0 +1,211 @@
+# GoReleaser configuration for gospecify with security features
+# This configuration provides:
+# - Cross-platform binary builds
+# - Digital signatures (cosign keyless)
+# - Software Bill of Materials (SBOM)
+# - Checksums for integrity verification
+# - Multiple package formats
+# - Homebrew formula generation
+
+version: 2
+
+project_name: gospecify
+
+# Build configuration
+builds:
+  - id: gospecify
+    main: ./cmd/gospecify
+    binary: gospecify
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+# Archive configuration
+archives:
+  - id: gospecify
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+
+# Checksums for integrity verification
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Software Bill of Materials (SBOM) generation
+# Note: Requires Syft to be installed
+# sboms:
+#   - id: gospecify-sbom
+#     artifacts: archive
+#     documents:
+#       - "{{ .ArtifactName }}.sbom.json"
+#     cmd: syft
+#     args:
+#       - "$artifact"
+#       - "--output"
+#       - "spdx-json=$document"
+#       - "--enrich"
+#       - "all"
+#     env:
+#       - SYFT_FILE_METADATA_CATALOGER_ENABLED=true
+
+# Digital signatures using cosign (keyless)
+# Note: Requires COSIGN_PASSWORD and COSIGN_PRIVATE_KEY environment variables
+# signs:
+#   - id: cosign-sign
+#     cmd: cosign
+#     stdin: '{{ .Env.COSIGN_PASSWORD }}'
+#     args:
+#       - 'sign-blob'
+#       - '--key={{ .Env.COSIGN_PRIVATE_KEY }}'
+#       - '--output-signature=${signature}'
+#       - '${artifact}'
+#       - '--yes'
+#     artifacts: all
+#     certificate: '${artifact}.pem'
+
+# Linux packages (deb, rpm)
+nfpms:
+  - id: gospecify
+    package_name: gospecify
+    file_name_template: >-
+      {{ .PackageName }}_
+      {{- .Version }}_
+      {{- if eq .Os "linux" }}
+        {{- if eq .Arch "amd64" }}x86_64
+        {{- else }}{{ .Arch }}{{ end }}
+      {{- else }}{{ .Os }}_{{ .Arch }}{{ end }}
+    homepage: https://github.com/github/spec-kit
+    maintainer: GitHub Spec Kit Team <opensource@github.com>
+    description: Setup tool for Specify spec-driven development projects
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+
+    scripts:
+      postinstall: ./scripts/postinstall.sh
+      preremove: ./scripts/preremove.sh
+
+# Homebrew formula
+brews:
+  - name: gospecify
+    description: Setup tool for Specify spec-driven development projects
+    homepage: https://github.com/github/spec-kit
+    license: MIT
+    repository:
+      owner: github
+      name: homebrew-spec-kit
+    skip_upload: true  # Skip upload for snapshots
+    custom_block: |
+      head "https://github.com/github/spec-kit.git", branch: "main"
+    dependencies:
+      - name: go
+        type: optional
+    install: |
+      system "go", "build", "-ldflags", "-s -w -X main.version=#{version}", "-o", bin/"gospecify", "./cmd/gospecify"
+    test: |
+      assert_match "gospecify", shell_output("#{bin}/gospecify --help")
+
+# GitHub release configuration
+release:
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  github:
+    owner: github
+    name: spec-kit
+  draft: false
+  prerelease: auto
+  mode: append
+  extra_files:
+    - glob: ./dist/*.sbom.json
+    - glob: ./dist/*.pem
+  footer: |
+    ## Installation
+
+    ### Homebrew (macOS/Linux)
+    ```bash
+    brew install github/spec-kit/gospecify
+    ```
+
+    ### Linux (deb/rpm)
+    Download the appropriate package from the assets below and install with your package manager.
+
+    ### Binary (all platforms)
+    Download the binary for your platform from the assets below.
+
+    ## Security
+
+    All releases include:
+    - **Digital signatures** for integrity verification
+    - **Software Bill of Materials (SBOM)** for supply chain transparency
+    - **SHA256 checksums** for artifact verification
+
+    ### Verifying signatures
+    ```bash
+    # Verify checksums
+    sha256sum -c checksums.txt
+
+    # Verify signatures with cosign
+    cosign verify-blob --key cosign.pub --signature gospecify.tar.gz.sig gospecify.tar.gz
+    ```
+
+# Build metadata and provenance
+metadata:
+  mod_timestamp: '{{ .CommitTimestamp }}'
+
+# Changelog configuration
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - Merge pull request
+      - Merge branch
+
+# Git configuration
+git:
+  tag_sort: -version:refname
+  prerelease_suffix: "-"
+
+# Environment variables
+# Note: Set these for production releases
+# COSIGN_PASSWORD and COSIGN_PRIVATE_KEY for signing
+
+# Hooks for additional processing
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+

@@ -1,0 +1,483 @@
+// Package cmd provides the CLI commands for gospecify
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/github/spec-kit/gospecify/internal/config"
+	"github.com/github/spec-kit/gospecify/internal/github"
+	"github.com/github/spec-kit/gospecify/internal/scripts"
+	"github.com/github/spec-kit/gospecify/internal/templates"
+	"github.com/github/spec-kit/gospecify/internal/ui"
+	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/schollz/progressbar/v3"
+	"github.com/spf13/cobra"
+)
+
+// NewInitCmd creates the init command
+func NewInitCmd() *cobra.Command {
+	var cfg config.ProjectConfig
+
+	cmd := &cobra.Command{
+		Use:   "init [project-name]",
+		Short: "Initialize a new Specify project from the latest template",
+		Long: `Initialize a new Specify project from the latest template.
+
+This command will:
+1. Check that required tools are installed (git is optional)
+2. Let you choose your AI assistant (Claude Code, Gemini CLI, GitHub Copilot, etc.)
+3. Download the appropriate template from GitHub
+4. Extract the template to a new project directory or current directory
+5. Initialize a fresh git repository (if not --no-git and no existing repo)
+6. Optionally set up AI assistant commands
+
+Examples:
+  gospecify init my-project
+  gospecify init my-project --ai claude
+  gospecify init --here --ai claude
+  gospecify init --here --force`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if cfg.Here && len(args) > 0 {
+				return fmt.Errorf("cannot specify both project name and --here flag")
+			}
+			if !cfg.Here && len(args) == 0 {
+				return fmt.Errorf("must specify either a project name or use --here flag")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				cfg.Name = args[0]
+			}
+			cfg.CreatedAt = time.Now()
+			return runInit(&cfg)
+		},
+	}
+
+	// Flags
+	cmd.Flags().StringVar(&cfg.AIAssistant, "ai", "",
+		"AI assistant to use: claude, gemini, copilot, cursor, qwen, opencode, windsurf, kilocode, auggie, or roo")
+	cmd.Flags().StringVar(&cfg.ScriptType, "script", "",
+		"Script type to use: sh or ps")
+	cmd.Flags().BoolVar(&cfg.IgnoreTools, "ignore-agent-tools", false,
+		"Skip checks for AI agent tools like Claude Code")
+	cmd.Flags().BoolVar(&cfg.NoGit, "no-git", false,
+		"Skip git repository initialization")
+	cmd.Flags().BoolVar(&cfg.Here, "here", false,
+		"Initialize project in the current directory instead of creating a new one")
+	cmd.Flags().BoolVar(&cfg.Force, "force", false,
+		"Force merge/overwrite when using --here (skip confirmation)")
+	cmd.Flags().BoolVar(&cfg.SkipTLS, "skip-tls", false,
+		"Skip SSL/TLS verification (not recommended)")
+	cmd.Flags().BoolVar(&cfg.Debug, "debug", false,
+		"Show verbose diagnostic output for network and extraction failures")
+	cmd.Flags().StringVar(&cfg.GitHubToken, "github-token", "",
+		"GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)")
+
+	return cmd
+}
+
+// runInit executes the init command
+func runInit(cfg *config.ProjectConfig) error {
+	ctx := context.Background()
+
+	// Initialize progress tracker
+	tracker := &config.StepTracker{
+		Title: "Initializing Specify Project",
+	}
+	tracker.Add("validate", "Validate configuration")
+	tracker.Add("assistant", "Select AI assistant")
+	tracker.Add("script", "Select script type")
+	tracker.Add("tools", "Check required tools")
+	tracker.Add("download", "Download template")
+	tracker.Add("extract", "Extract template")
+	tracker.Add("process", "Process templates")
+	tracker.Add("scripts", "Generate scripts")
+	tracker.Add("git", "Initialize git repository")
+
+	// Set up live progress display
+	progress := ui.NewLiveProgress(tracker)
+	fmt.Println(progress.Render())
+
+	// Step 1: Validate configuration
+	tracker.Start("validate", "")
+	if err := validateConfig(cfg); err != nil {
+		tracker.Error("validate", err.Error())
+		return err
+	}
+	tracker.Complete("validate", "Configuration valid")
+
+	// Step 2: Select AI assistant
+	tracker.Start("assistant", "")
+	assistant, err := selectAssistant(cfg)
+	if err != nil {
+		tracker.Error("assistant", err.Error())
+		return err
+	}
+	cfg.AIAssistant = assistant.Key
+	tracker.Complete("assistant", fmt.Sprintf("Selected %s", assistant.Name))
+
+	// Step 3: Select script type
+	tracker.Start("script", "")
+	scriptType, err := selectScriptType(cfg)
+	if err != nil {
+		tracker.Error("script", err.Error())
+		return err
+	}
+	cfg.ScriptType = scriptType
+	tracker.Complete("script", fmt.Sprintf("Selected %s", config.ScriptTypes[scriptType].Name))
+
+	// Step 4: Check required tools
+	tracker.Start("tools", "")
+	if err := checkRequiredTools(assistant, cfg.IgnoreTools); err != nil {
+		tracker.Error("tools", err.Error())
+		return err
+	}
+	tracker.Complete("tools", "All tools available")
+
+	// Step 5: Download template
+	tracker.Start("download", "")
+	templatePath, err := downloadTemplate(ctx, assistant, cfg)
+	if err != nil {
+		tracker.Error("download", err.Error())
+		return err
+	}
+	defer os.Remove(templatePath)
+	tracker.Complete("download", "Template downloaded")
+
+	// Step 6: Extract template
+	tracker.Start("extract", "")
+	projectPath, err := extractTemplate(templatePath, cfg)
+	if err != nil {
+		tracker.Error("extract", err.Error())
+		return err
+	}
+	cfg.Path = projectPath
+	tracker.Complete("extract", fmt.Sprintf("Extracted to %s", projectPath))
+
+	// Step 7: Process templates
+	tracker.Start("process", "")
+	if err := processTemplates(projectPath, assistant, scriptType); err != nil {
+		tracker.Error("process", err.Error())
+		return err
+	}
+	tracker.Complete("process", "Templates processed")
+
+	// Step 8: Generate scripts
+	tracker.Start("scripts", "")
+	if err := generateScripts(projectPath, assistant, scriptType); err != nil {
+		tracker.Error("scripts", err.Error())
+		return err
+	}
+	tracker.Complete("scripts", "Scripts generated")
+
+	// Step 9: Initialize git repository
+	tracker.Start("git", "")
+	if err := initializeGit(projectPath, cfg.NoGit); err != nil {
+		tracker.Error("git", err.Error())
+		return err
+	}
+	if !cfg.NoGit {
+		tracker.Complete("git", "Git repository initialized")
+	} else {
+		tracker.Skip("git", "Skipped")
+	}
+
+	// Show success message and next steps
+	showSuccessMessage(cfg, assistant)
+
+	return nil
+}
+
+// validateConfig validates the initial configuration
+func validateConfig(cfg *config.ProjectConfig) error {
+	if cfg.Here {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to get current directory", err)
+		}
+		cfg.Path = cwd
+		cfg.Name = filepath.Base(cwd)
+	} else {
+		var err error
+		cfg.Path, err = filepath.Abs(cfg.Name)
+		if err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to resolve project path", err)
+		}
+	}
+
+	// Check if directory exists and handle --force flag
+	if _, err := os.Stat(cfg.Path); err == nil {
+		if cfg.Here && !cfg.Force {
+			return errors.NewValidationError(
+				"Directory already exists. Use --force to overwrite or specify a different name")
+		}
+		if !cfg.Here {
+			return errors.NewValidationError(
+				fmt.Sprintf("Directory %s already exists", cfg.Path))
+		}
+	}
+
+	return nil
+}
+
+// selectAssistant selects the AI assistant to use
+func selectAssistant(cfg *config.ProjectConfig) (*config.AIAssistant, error) {
+	if cfg.AIAssistant != "" {
+		assistant, exists := config.AIAssistants[cfg.AIAssistant]
+		if !exists {
+			return nil, errors.NewValidationError(
+				fmt.Sprintf("Unknown AI assistant: %s", cfg.AIAssistant))
+		}
+		return &assistant, nil
+	}
+
+	// Interactive selection
+	selector := ui.NewSelector("Select your AI assistant", config.AIChoices, "claude")
+	selected, err := selector.Run()
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeValidationError, "assistant selection failed", err)
+	}
+
+	assistant := config.AIAssistants[selected]
+	return &assistant, nil
+}
+
+// selectScriptType selects the script type to use
+func selectScriptType(cfg *config.ProjectConfig) (string, error) {
+	if cfg.ScriptType != "" {
+		if _, exists := config.ScriptTypes[cfg.ScriptType]; !exists {
+			return "", errors.NewValidationError(
+				fmt.Sprintf("Unknown script type: %s", cfg.ScriptType))
+		}
+		return cfg.ScriptType, nil
+	}
+
+	// Interactive selection
+	scriptChoices := make(map[string]string)
+	for key, scriptType := range config.ScriptTypes {
+		scriptChoices[key] = scriptType.Name
+	}
+
+	selector := ui.NewSelector("Select your script type", scriptChoices, "sh")
+	selected, err := selector.Run()
+	if err != nil {
+		return "", errors.Wrap(errors.ErrCodeValidationError, "script type selection failed", err)
+	}
+
+	return selected, nil
+}
+
+// checkRequiredTools checks that required tools are available
+func checkRequiredTools(assistant *config.AIAssistant, ignoreTools bool) error {
+	if ignoreTools {
+		return nil
+	}
+
+	// Check for git (optional)
+	if _, err := exec.LookPath("git"); err != nil {
+		fmt.Println("Warning: git not found. Consider installing git for version control.")
+	}
+
+	// Check for AI assistant CLI tool (if required)
+	if assistant.CLITool != "" {
+		if _, err := exec.LookPath(assistant.CLITool); err != nil {
+			return errors.NewToolNotFound(assistant.CLITool)
+		}
+	}
+
+	return nil
+}
+
+// downloadTemplate downloads the template from GitHub
+func downloadTemplate(ctx context.Context, assistant *config.AIAssistant, cfg *config.ProjectConfig) (string, error) {
+	token := github.GetGitHubToken(cfg.GitHubToken)
+	client := github.NewClient(token, cfg.SkipTLS)
+
+	release, err := client.GetLatestRelease(ctx)
+	if err != nil {
+		return "", errors.Wrap(errors.ErrCodeGitHubAPIError, "failed to get latest release", err)
+	}
+
+	asset, err := github.FindTemplateAsset(release, assistant.Key)
+	if err != nil {
+		return "", err
+	}
+
+	// Create temp file for download
+	tempFile, err := os.CreateTemp("", "gospecify-template-*.zip")
+	if err != nil {
+		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to create temp file", err)
+	}
+	tempFile.Close()
+
+	// Download with progress
+	bar := progressbar.DefaultBytes(asset.Size, "Downloading template")
+	defer bar.Close()
+
+	err = client.DownloadAsset(ctx, *asset, tempFile.Name(), func(current, total int64) {
+		bar.Set64(current)
+	})
+
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", errors.Wrap(errors.ErrCodeNetworkError, "failed to download template", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+// extractTemplate extracts the downloaded template
+func extractTemplate(templatePath string, cfg *config.ProjectConfig) (string, error) {
+	extractor := github.NewExtractor(cfg.Path)
+
+	bar := progressbar.DefaultBytes(-1, "Extracting template")
+	defer bar.Close()
+
+	err := extractor.ExtractZip(templatePath, func(current, total int64) {
+		bar.ChangeMax64(total)
+		bar.Set64(current)
+	})
+
+	if err != nil {
+		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to extract template", err)
+	}
+
+	return cfg.Path, nil
+}
+
+// processTemplates processes the extracted templates
+func processTemplates(projectPath string, assistant *config.AIAssistant, scriptType string) error {
+	// Load embedded assets
+	assets, err := templates.LoadEmbeddedAssets()
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeAssetNotFound, "failed to load embedded assets", err)
+	}
+
+	// Create template processor
+	processor := templates.NewProcessor(assets, assistant, scriptType)
+
+	// Process all templates
+	processedTemplates, err := processor.ProcessAllTemplates()
+	if err != nil {
+		return err
+	}
+
+	// Write processed templates to project directory
+	for templateName, content := range processedTemplates {
+		templatePath := filepath.Join(projectPath, ".specify", "templates", templateName)
+		if err := os.MkdirAll(filepath.Dir(templatePath), 0755); err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to create template directory", err)
+		}
+
+		if err := os.WriteFile(templatePath, content, 0644); err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to write template", err)
+		}
+	}
+
+	return nil
+}
+
+// generateScripts generates the setup scripts
+func generateScripts(projectPath string, assistant *config.AIAssistant, scriptType string) error {
+	// Load embedded assets
+	assets, err := templates.LoadEmbeddedAssets()
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeAssetNotFound, "failed to load embedded assets", err)
+	}
+
+	// Create script generator
+	generator := scripts.NewGenerator(assets, assistant, scriptType)
+
+	// Generate all scripts
+	generatedScripts, err := generator.GenerateAllScripts()
+	if err != nil {
+		return err
+	}
+
+	// Write scripts to project directory
+	scriptsDir := filepath.Join(projectPath, ".specify", "scripts")
+	for scriptName, content := range generatedScripts {
+		scriptPath := filepath.Join(scriptsDir, scriptName+scripts.GetScriptExtension(scriptType))
+		if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to create scripts directory", err)
+		}
+
+		if err := os.WriteFile(scriptPath, content, 0755); err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to write script", err)
+		}
+	}
+
+	return nil
+}
+
+// initializeGit initializes a git repository if requested
+func initializeGit(projectPath string, noGit bool) error {
+	if noGit {
+		return nil
+	}
+
+	// Check if already a git repository
+	if _, err := os.Stat(filepath.Join(projectPath, ".git")); err == nil {
+		return nil // Already a git repo
+	}
+
+	// Initialize git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = projectPath
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(errors.ErrCodeGitError, "failed to initialize git repository", err)
+	}
+
+	// Create initial commit
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = projectPath
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(errors.ErrCodeGitError, "failed to add files to git", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit - Specify project setup")
+	cmd.Dir = projectPath
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(errors.ErrCodeGitError, "failed to create initial commit", err)
+	}
+
+	return nil
+}
+
+// showSuccessMessage displays success message and next steps
+func showSuccessMessage(cfg *config.ProjectConfig, assistant *config.AIAssistant) error {
+	fmt.Println()
+	fmt.Println(ui.InfoPanel.Render(fmt.Sprintf("✅ Successfully initialized Specify project in %s", cfg.Path)))
+	fmt.Println()
+
+	// Show security notice
+	if folder, exists := config.AgentFolderMap[assistant.Key]; exists {
+		fmt.Println(ui.WarningPanel.Render(fmt.Sprintf(
+			"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\nConsider adding [cyan]%s[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
+			folder)))
+		fmt.Println()
+	}
+
+	// Show next steps
+	steps := []string{
+		fmt.Sprintf("1. Go to the project folder: [cyan]cd %s[/cyan]", cfg.Name),
+		"2. Start using slash commands with your AI agent:",
+		fmt.Sprintf("   - [cyan]/analyze[/cyan] - Analyze codebase and requirements"),
+		fmt.Sprintf("   [cyan]/clarify[/cyan] - Get clarification on requirements"),
+		fmt.Sprintf("   [cyan]/implement[/cyan] - Implement features from specifications"),
+		fmt.Sprintf("   [cyan]/plan[/cyan] - Create development plans"),
+		fmt.Sprintf("   [cyan]/specify[/cyan] - Generate detailed specifications"),
+		fmt.Sprintf("   [cyan]/tasks[/cyan] - Break down work into tasks"),
+	}
+
+	fmt.Println(ui.SuccessPanel.Render(strings.Join(steps, "\n")))
+
+	return nil
+}
