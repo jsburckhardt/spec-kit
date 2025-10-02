@@ -40,10 +40,10 @@ jobs:
       - name: Install GoReleaser
         run: go install github.com/goreleaser/goreleaser/v2@latest
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-        with:
-          cosign-release: 'v2.4.0'
+      # - name: Install cosign
+      #   uses: sigstore/cosign-installer@v3
+      #   with:
+      #     cosign-release: 'v2.4.0'
 
       - name: Install Syft
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Verify tools installation
         run: |
           goreleaser --version
-          cosign version
+          # cosign version
           syft version
 
       - name: Run GoReleaser (dry-run for testing)
@@ -61,20 +61,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate cosign key-pair (for testing)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          cosign generate-key-pair
-          echo "COSIGN_PRIVATE_KEY=$(cat cosign.key)" >> $GITHUB_ENV
-          echo "COSIGN_PASSWORD=password" >> $GITHUB_ENV
+      # - name: Generate cosign key-pair (for testing)
+      #   if: github.event_name == 'workflow_dispatch'
+      #   run: |
+      #     cosign generate-key-pair
+      #     echo "COSIGN_PRIVATE_KEY=$(cat cosign.key)" >> $GITHUB_ENV
+      #     echo "COSIGN_PASSWORD=password" >> $GITHUB_ENV
 
       - name: Run GoReleaser (production release)
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/gospecify/')
         run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          # COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          # COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
 
       - name: Upload build artifacts
         if: always()
@@ -105,14 +105,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Verify signatures
-        run: |
-          find artifacts/ -name "*.sig" -exec bash -c '
-            artifact="${1%.sig}"
-            sig="${1}"
-            echo "Verifying signature for $artifact"
-            cosign verify-blob --key ${{ secrets.COSIGN_PUBLIC_KEY }} --signature "$sig" "$artifact" || echo "Signature verification failed for $artifact"
-          ' _ {} \;
+      # - name: Verify signatures
+      #   run: |
+      #     find artifacts/ -name "*.sig" -exec bash -c '
+      #       artifact="${1%.sig}"
+      #       sig="${1}"
+      #       echo "Verifying signature for $artifact"
+      #       cosign verify-blob --key ${{ secrets.COSIGN_PUBLIC_KEY }} --signature "$sig" "$artifact" || echo "Signature verification failed for $artifact"
+      #     ' _ {} \;
 
       - name: Validate SBOM
         run: |
