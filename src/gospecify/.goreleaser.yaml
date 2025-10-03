@@ -125,7 +125,7 @@ brews:
     homepage: https://github.com/jsburckhardt/spec-kit
     license: MIT
     repository:
-      owner: github
+      owner: jsburckhardt
       name: homebrew-spec-kit
     skip_upload: true  # Skip upload for snapshots
     custom_block: |
@@ -142,7 +142,7 @@ brews:
 release:
   name_template: "{{.ProjectName}} v{{.Version}}"
   github:
-    owner: github
+    owner: jsburckhardt
     name: spec-kit
   draft: false
   prerelease: auto
