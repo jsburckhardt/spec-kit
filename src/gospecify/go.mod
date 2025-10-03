@@ -1,4 +1,4 @@
-module github.com/github/spec-kit/gospecify
+module github.com/jsburckhardt/spec-kit/gospecify
 
 go 1.25.1
 

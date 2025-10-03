@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gospecify "github.com/github/spec-kit/gospecify"
+	gospecify "github.com/jsburckhardt/spec-kit/gospecify"
 )
 
 // EmbeddedAssets holds all embedded template and script assets

@@ -4,7 +4,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
 )
 
 // ShowBanner displays the application banner

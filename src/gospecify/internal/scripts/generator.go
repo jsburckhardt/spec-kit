@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/internal/templates"
-	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/templates"
+	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
 )
 
 // Generator creates dynamic scripts from embedded templates

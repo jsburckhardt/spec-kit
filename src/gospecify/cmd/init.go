@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/internal/github"
-	"github.com/github/spec-kit/gospecify/internal/scripts"
-	"github.com/github/spec-kit/gospecify/internal/templates"
-	"github.com/github/spec-kit/gospecify/internal/ui"
-	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/github"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/scripts"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/templates"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/ui"
+	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )

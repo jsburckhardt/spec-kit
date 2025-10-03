@@ -105,9 +105,9 @@ nfpms:
         {{- if eq .Arch "amd64" }}x86_64
         {{- else }}{{ .Arch }}{{ end }}
       {{- else }}{{ .Os }}_{{ .Arch }}{{ end }}
-    homepage: https://github.com/github/spec-kit
-    maintainer: GitHub Spec Kit Team <opensource@github.com>
-    description: Setup tool for Specify spec-driven development projects
+    homepage: https://github.com/jsburckhardt/spec-kit
+    maintainer: Jsburckhardt gospecify
+    description: GO version of Specify (https://github.com/github/spec-kit)
     license: MIT
     formats:
       - deb
@@ -122,14 +122,14 @@ nfpms:
 brews:
   - name: gospecify
     description: Setup tool for Specify spec-driven development projects
-    homepage: https://github.com/github/spec-kit
+    homepage: https://github.com/jsburckhardt/spec-kit
     license: MIT
     repository:
       owner: github
       name: homebrew-spec-kit
     skip_upload: true  # Skip upload for snapshots
     custom_block: |
-      head "https://github.com/github/spec-kit.git", branch: "main"
+      head "https://github.com/jsburckhardt/spec-kit.git", branch: "main"
     dependencies:
       - name: go
         type: optional
@@ -155,7 +155,7 @@ release:
 
     ### Homebrew (macOS/Linux)
     ```bash
-    brew install github/spec-kit/gospecify
+    brew install jsburckhardt/spec-kit/gospecify
     ```
 
     ### Linux (deb/rpm)
@@ -208,4 +208,3 @@ before:
   hooks:
     - go mod tidy
     - go mod download
-

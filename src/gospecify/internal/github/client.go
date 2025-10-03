@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
 )
 
 // Release represents a GitHub release
