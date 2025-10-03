@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/internal/github"
-	"github.com/github/spec-kit/gospecify/internal/scripts"
-	"github.com/github/spec-kit/gospecify/internal/templates"
-	"github.com/github/spec-kit/gospecify/internal/ui"
-	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/github"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/scripts"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/templates"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/ui"
+	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
@@ -148,7 +148,7 @@ func runInit(cfg *config.ProjectConfig) error {
 		tracker.Error("download", err.Error())
 		return err
 	}
-	defer os.Remove(templatePath)
+	defer func() { _ = os.Remove(templatePath) }()
 	tracker.Complete("download", "Template downloaded")
 
 	// Step 6: Extract template
@@ -190,7 +190,9 @@ func runInit(cfg *config.ProjectConfig) error {
 	}
 
 	// Show success message and next steps
-	showSuccessMessage(cfg, assistant)
+	if err := showSuccessMessage(cfg, assistant); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -315,18 +317,20 @@ func downloadTemplate(ctx context.Context, assistant *config.AIAssistant, cfg *c
 	if err != nil {
 		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to create temp file", err)
 	}
-	tempFile.Close()
+	if err := tempFile.Close(); err != nil {
+		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to close temp file", err)
+	}
 
 	// Download with progress
 	bar := progressbar.DefaultBytes(asset.Size, "Downloading template")
-	defer bar.Close()
+	defer func() { _ = bar.Close() }()
 
 	err = client.DownloadAsset(ctx, *asset, tempFile.Name(), func(current, total int64) {
-		bar.Set64(current)
+		_ = bar.Set64(current)
 	})
 
 	if err != nil {
-		os.Remove(tempFile.Name())
+		_ = os.Remove(tempFile.Name())
 		return "", errors.Wrap(errors.ErrCodeNetworkError, "failed to download template", err)
 	}
 
@@ -338,11 +342,11 @@ func extractTemplate(templatePath string, cfg *config.ProjectConfig) (string, er
 	extractor := github.NewExtractor(cfg.Path)
 
 	bar := progressbar.DefaultBytes(-1, "Extracting template")
-	defer bar.Close()
+	defer func() { _ = bar.Close() }()
 
 	err := extractor.ExtractZip(templatePath, func(current, total int64) {
 		bar.ChangeMax64(total)
-		bar.Set64(current)
+		_ = bar.Set64(current)
 	})
 
 	if err != nil {
@@ -469,12 +473,12 @@ func showSuccessMessage(cfg *config.ProjectConfig, assistant *config.AIAssistant
 	steps := []string{
 		fmt.Sprintf("1. Go to the project folder: [cyan]cd %s[/cyan]", cfg.Name),
 		"2. Start using slash commands with your AI agent:",
-		fmt.Sprintf("   - [cyan]/analyze[/cyan] - Analyze codebase and requirements"),
-		fmt.Sprintf("   [cyan]/clarify[/cyan] - Get clarification on requirements"),
-		fmt.Sprintf("   [cyan]/implement[/cyan] - Implement features from specifications"),
-		fmt.Sprintf("   [cyan]/plan[/cyan] - Create development plans"),
-		fmt.Sprintf("   [cyan]/specify[/cyan] - Generate detailed specifications"),
-		fmt.Sprintf("   [cyan]/tasks[/cyan] - Break down work into tasks"),
+		"   - [cyan]/analyze[/cyan] - Analyze codebase and requirements",
+		"   [cyan]/clarify[/cyan] - Get clarification on requirements",
+		"   [cyan]/implement[/cyan] - Implement features from specifications",
+		"   [cyan]/plan[/cyan] - Create development plans",
+		"   [cyan]/specify[/cyan] - Generate detailed specifications",
+		"   [cyan]/tasks[/cyan] - Break down work into tasks",
 	}
 
 	fmt.Println(ui.SuccessPanel.Render(strings.Join(steps, "\n")))

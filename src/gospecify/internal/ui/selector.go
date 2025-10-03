@@ -147,7 +147,7 @@ func (d selectorDelegate) Render(w io.Writer, m list.Model, index int, item list
 		style = itemStyle
 	}
 
-	fmt.Fprintf(w, style.Render(fmt.Sprintf("%s (%s)", i.key, i.value)))
+	_, _ = fmt.Fprint(w, style.Render(fmt.Sprintf("%s (%s)", i.key, i.value)))
 }
 
 // Styles

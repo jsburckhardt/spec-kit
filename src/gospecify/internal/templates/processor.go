@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/pkg/errors"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
 )
 
 // Processor handles template processing for different AI assistants

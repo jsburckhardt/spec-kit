@@ -149,6 +149,7 @@ func (st *StepTracker) maybeRefresh() {
 			defer func() {
 				if r := recover(); r != nil {
 					// Ignore panics in refresh callback
+					_ = r
 				}
 			}()
 			st.refreshCb()

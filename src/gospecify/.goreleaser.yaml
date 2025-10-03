@@ -106,8 +106,8 @@ nfpms:
         {{- else }}{{ .Arch }}{{ end }}
       {{- else }}{{ .Os }}_{{ .Arch }}{{ end }}
     homepage: https://github.com/jsburckhardt/spec-kit
-    maintainer: GitHub Spec Kit Team <opensource@github.com>
-    description: Setup tool for Specify spec-driven development projects
+    maintainer: Jsburckhardt gospecify
+    description: GO version of Specify (https://github.com/github/spec-kit)
     license: MIT
     formats:
       - deb

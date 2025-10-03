@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/github/spec-kit/gospecify/cmd"
+	"github.com/jsburckhardt/spec-kit/gospecify/cmd"
 )
 
 func main() {

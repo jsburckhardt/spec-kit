@@ -4,7 +4,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
 	"github.com/spf13/cobra"
 )
 

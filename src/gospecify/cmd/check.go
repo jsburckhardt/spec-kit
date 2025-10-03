@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/github/spec-kit/gospecify/internal/config"
-	"github.com/github/spec-kit/gospecify/internal/ui"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
+	"github.com/jsburckhardt/spec-kit/gospecify/internal/ui"
 	"github.com/spf13/cobra"
 )
 
