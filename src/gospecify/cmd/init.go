@@ -2,7 +2,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,12 +10,10 @@ import (
 	"time"
 
 	"github.com/jsburckhardt/spec-kit/gospecify/internal/config"
-	"github.com/jsburckhardt/spec-kit/gospecify/internal/github"
 	"github.com/jsburckhardt/spec-kit/gospecify/internal/scripts"
 	"github.com/jsburckhardt/spec-kit/gospecify/internal/templates"
 	"github.com/jsburckhardt/spec-kit/gospecify/internal/ui"
 	"github.com/jsburckhardt/spec-kit/gospecify/pkg/errors"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -85,7 +82,6 @@ Examples:
 
 // runInit executes the init command
 func runInit(cfg *config.ProjectConfig) error {
-	ctx := context.Background()
 
 	// Initialize progress tracker
 	tracker := &config.StepTracker{
@@ -95,8 +91,8 @@ func runInit(cfg *config.ProjectConfig) error {
 	tracker.Add("assistant", "Select AI assistant")
 	tracker.Add("script", "Select script type")
 	tracker.Add("tools", "Check required tools")
-	tracker.Add("download", "Download template")
-	tracker.Add("extract", "Extract template")
+	tracker.Add("download", "Prepare project directory")
+	tracker.Add("extract", "Setup embedded assets")
 	tracker.Add("process", "Process templates")
 	tracker.Add("scripts", "Generate scripts")
 	tracker.Add("git", "Initialize git repository")
@@ -141,25 +137,19 @@ func runInit(cfg *config.ProjectConfig) error {
 	}
 	tracker.Complete("tools", "All tools available")
 
-	// Step 5: Download template
+	// Step 5: Prepare project directory (using embedded assets)
 	tracker.Start("download", "")
-	templatePath, err := downloadTemplate(ctx, assistant, cfg)
+	projectPath, err := prepareProjectDirectory(cfg)
 	if err != nil {
 		tracker.Error("download", err.Error())
 		return err
 	}
-	defer func() { _ = os.Remove(templatePath) }()
-	tracker.Complete("download", "Template downloaded")
-
-	// Step 6: Extract template
-	tracker.Start("extract", "")
-	projectPath, err := extractTemplate(templatePath, cfg)
-	if err != nil {
-		tracker.Error("extract", err.Error())
-		return err
-	}
 	cfg.Path = projectPath
-	tracker.Complete("extract", fmt.Sprintf("Extracted to %s", projectPath))
+	tracker.Complete("download", "Project directory prepared")
+
+	// Step 6: Skip extract (using embedded assets only)
+	tracker.Start("extract", "")
+	tracker.Complete("extract", "Using embedded assets")
 
 	// Step 7: Process templates
 	tracker.Start("process", "")
@@ -297,66 +287,7 @@ func checkRequiredTools(assistant *config.AIAssistant, ignoreTools bool) error {
 	return nil
 }
 
-// downloadTemplate downloads the template from GitHub
-func downloadTemplate(ctx context.Context, assistant *config.AIAssistant, cfg *config.ProjectConfig) (string, error) {
-	token := github.GetGitHubToken(cfg.GitHubToken)
-	client := github.NewClient(token, cfg.SkipTLS)
-
-	release, err := client.GetLatestRelease(ctx)
-	if err != nil {
-		return "", errors.Wrap(errors.ErrCodeGitHubAPIError, "failed to get latest release", err)
-	}
-
-	asset, err := github.FindTemplateAsset(release, assistant.Key)
-	if err != nil {
-		return "", err
-	}
-
-	// Create temp file for download
-	tempFile, err := os.CreateTemp("", "gospecify-template-*.zip")
-	if err != nil {
-		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to create temp file", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to close temp file", err)
-	}
-
-	// Download with progress
-	bar := progressbar.DefaultBytes(asset.Size, "Downloading template")
-	defer func() { _ = bar.Close() }()
-
-	err = client.DownloadAsset(ctx, *asset, tempFile.Name(), func(current, total int64) {
-		_ = bar.Set64(current)
-	})
-
-	if err != nil {
-		_ = os.Remove(tempFile.Name())
-		return "", errors.Wrap(errors.ErrCodeNetworkError, "failed to download template", err)
-	}
-
-	return tempFile.Name(), nil
-}
-
-// extractTemplate extracts the downloaded template
-func extractTemplate(templatePath string, cfg *config.ProjectConfig) (string, error) {
-	extractor := github.NewExtractor(cfg.Path)
-
-	bar := progressbar.DefaultBytes(-1, "Extracting template")
-	defer func() { _ = bar.Close() }()
-
-	err := extractor.ExtractZip(templatePath, func(current, total int64) {
-		bar.ChangeMax64(total)
-		_ = bar.Set64(current)
-	})
-
-	if err != nil {
-		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to extract template", err)
-	}
-
-	return cfg.Path, nil
-}
-
-// processTemplates processes the extracted templates
+// processTemplates processes templates from embedded assets and creates project structure
 func processTemplates(projectPath string, assistant *config.AIAssistant, scriptType string) error {
 	// Load embedded assets
 	assets, err := templates.LoadEmbeddedAssets()
@@ -367,13 +298,26 @@ func processTemplates(projectPath string, assistant *config.AIAssistant, scriptT
 	// Create template processor
 	processor := templates.NewProcessor(assets, assistant, scriptType)
 
-	// Process all templates
+	// Create base project structure
+	dirs := []string{
+		".specify/templates",
+		".specify/templates/commands",
+		assistant.Directory,
+	}
+
+	for _, dir := range dirs {
+		dirPath := filepath.Join(projectPath, dir)
+		if err := os.MkdirAll(dirPath, 0755); err != nil {
+			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to create directory", err)
+		}
+	}
+
+	// Process and write all templates to project directory
 	processedTemplates, err := processor.ProcessAllTemplates()
 	if err != nil {
 		return err
 	}
 
-	// Write processed templates to project directory
 	for templateName, content := range processedTemplates {
 		templatePath := filepath.Join(projectPath, ".specify", "templates", templateName)
 		if err := os.MkdirAll(filepath.Dir(templatePath), 0755); err != nil {
@@ -382,6 +326,18 @@ func processTemplates(projectPath string, assistant *config.AIAssistant, scriptT
 
 		if err := os.WriteFile(templatePath, content, 0644); err != nil {
 			return errors.Wrap(errors.ErrCodeFileSystemError, "failed to write template", err)
+		}
+	}
+
+	// Copy command templates to assistant folder
+	for templateName, content := range processedTemplates {
+		if strings.HasPrefix(templateName, "commands/") {
+			commandName := strings.TrimPrefix(templateName, "commands/")
+			commandPath := filepath.Join(projectPath, assistant.Directory, commandName)
+
+			if err := os.WriteFile(commandPath, content, 0644); err != nil {
+				return errors.Wrap(errors.ErrCodeFileSystemError, "failed to write command template", err)
+			}
 		}
 	}
 
@@ -463,25 +419,72 @@ func showSuccessMessage(cfg *config.ProjectConfig, assistant *config.AIAssistant
 
 	// Show security notice
 	if folder, exists := config.AgentFolderMap[assistant.Key]; exists {
-		fmt.Println(ui.WarningPanel.Render(fmt.Sprintf(
-			"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\nConsider adding [cyan]%s[/cyan] (or parts of it) to [cyan].gitignore[/cyan] to prevent accidental credential leakage.",
-			folder)))
+		securityMessage := fmt.Sprintf(
+			"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\nConsider adding %s (or parts of it) to %s to prevent accidental credential leakage.",
+			ui.CyanStyle.Render(folder),
+			ui.CyanStyle.Render(".gitignore"))
+		fmt.Println(ui.WarningPanel.Render(securityMessage))
 		fmt.Println()
 	}
 
 	// Show next steps
 	steps := []string{
-		fmt.Sprintf("1. Go to the project folder: [cyan]cd %s[/cyan]", cfg.Name),
+		fmt.Sprintf("1. Go to the project folder: %s", ui.CyanStyle.Render(fmt.Sprintf("cd %s", cfg.Name))),
 		"2. Start using slash commands with your AI agent:",
-		"   - [cyan]/analyze[/cyan] - Analyze codebase and requirements",
-		"   [cyan]/clarify[/cyan] - Get clarification on requirements",
-		"   [cyan]/implement[/cyan] - Implement features from specifications",
-		"   [cyan]/plan[/cyan] - Create development plans",
-		"   [cyan]/specify[/cyan] - Generate detailed specifications",
-		"   [cyan]/tasks[/cyan] - Break down work into tasks",
+		fmt.Sprintf("   - %s - Analyze codebase and requirements", ui.CyanStyle.Render("/analyze")),
+		fmt.Sprintf("   - %s - Get clarification on requirements", ui.CyanStyle.Render("/clarify")),
+		fmt.Sprintf("   - %s - Implement features from specifications", ui.CyanStyle.Render("/implement")),
+		fmt.Sprintf("   - %s - Create development plans", ui.CyanStyle.Render("/plan")),
+		fmt.Sprintf("   - %s - Generate detailed specifications", ui.CyanStyle.Render("/specify")),
+		fmt.Sprintf("   - %s - Break down work into tasks", ui.CyanStyle.Render("/tasks")),
 	}
 
 	fmt.Println(ui.SuccessPanel.Render(strings.Join(steps, "\n")))
 
 	return nil
+}
+
+// prepareProjectDirectory creates the project directory structure without GitHub download
+func prepareProjectDirectory(cfg *config.ProjectConfig) (string, error) {
+	var projectPath string
+
+	if cfg.Here {
+		// Use current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to get current directory", err)
+		}
+		projectPath = cwd
+
+		// Check if directory is empty or force flag is set
+		entries, err := os.ReadDir(projectPath)
+		if err != nil {
+			return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to read current directory", err)
+		}
+
+		if len(entries) > 0 && !cfg.Force {
+			return "", errors.New(errors.ErrCodeValidationError, "directory is not empty (use --force to override)")
+		}
+	} else {
+		// Create new project directory
+		projectPath = filepath.Join(".", cfg.Name)
+
+		// Check if directory already exists
+		if _, err := os.Stat(projectPath); err == nil {
+			return "", errors.New(errors.ErrCodeValidationError, fmt.Sprintf("Directory %s already exists", projectPath))
+		}
+
+		// Create the project directory
+		if err := os.MkdirAll(projectPath, 0755); err != nil {
+			return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to create project directory", err)
+		}
+	}
+
+	// Convert to absolute path
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "", errors.Wrap(errors.ErrCodeFileSystemError, "failed to get absolute path", err)
+	}
+
+	return absPath, nil
 }

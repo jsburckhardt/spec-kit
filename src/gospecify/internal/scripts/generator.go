@@ -43,17 +43,20 @@ func (g *Generator) GenerateScript(scriptName string) ([]byte, error) {
 
 // getScriptPath returns the embedded path for a script
 func (g *Generator) getScriptPath(scriptName string) string {
-	var extension string
+	var directory, extension string
 	switch g.scriptType {
 	case config.ScriptTypeBash:
+		directory = "bash"
 		extension = ".sh"
 	case config.ScriptTypePowerShell:
+		directory = "powershell"
 		extension = ".ps1"
 	default:
+		directory = "bash"
 		extension = ".sh"
 	}
 
-	return fmt.Sprintf("%s/%s%s", g.scriptType, scriptName, extension)
+	return fmt.Sprintf("%s/%s%s", directory, scriptName, extension)
 }
 
 // applyReplacements applies placeholder replacements to script content
