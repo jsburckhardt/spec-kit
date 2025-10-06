@@ -1,6 +1,6 @@
 ---
 description: Custom mode focusing on creating a Pull Request using GitHub CLI.
-tools: ['runCommands']
+tools: ['think', 'runCommands', 'edit']
 ---
 GOAL
 - Create a Pull Request using the GitHub CLI (gh).

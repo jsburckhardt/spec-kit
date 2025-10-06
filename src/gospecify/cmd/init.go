@@ -331,7 +331,8 @@ func processTemplates(projectPath string, assistant *config.AIAssistant, scriptT
 	for templateName, content := range processedTemplates {
 		if strings.HasPrefix(templateName, "commands/") {
 			commandName := strings.TrimPrefix(templateName, "commands/")
-			commandPath := filepath.Join(projectPath, assistant.Directory, commandName)
+			finalCommandName := generateCommandFileName(commandName, assistant)
+			commandPath := filepath.Join(projectPath, assistant.Directory, finalCommandName)
 
 			if err := os.WriteFile(commandPath, content, 0644); err != nil {
 				return errors.Wrap(errors.ErrCodeFileSystemError, "failed to write command template", err)
@@ -485,4 +486,22 @@ func prepareProjectDirectory(cfg *config.ProjectConfig) (string, error) {
 	}
 
 	return absPath, nil
+}
+
+// generateCommandFileName generates the correct filename for a command template based on the assistant's format
+func generateCommandFileName(originalName string, assistant *config.AIAssistant) string {
+	// Extract base name without extension
+	baseName := strings.TrimSuffix(originalName, filepath.Ext(originalName))
+
+	// Apply assistant-specific format
+	switch assistant.Format {
+	case config.FormatPrompt:
+		return baseName + ".prompt.md"
+	case config.FormatTOML:
+		return baseName + ".toml"
+	case config.FormatMarkdown:
+		return baseName + ".md"
+	default:
+		return originalName // fallback to original name
+	}
 }
