@@ -43,5 +43,3 @@ env/
 .genreleases/
 *.zip
 sdd-*/
-
-flowspace
