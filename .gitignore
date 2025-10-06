@@ -43,3 +43,6 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+
+# gospecify
+src/gospecify/gospecify

@@ -204,17 +204,15 @@ func validateConfig(cfg *config.ProjectConfig) error {
 		}
 	}
 
-	// Check if directory exists and handle --force flag
-	if _, err := os.Stat(cfg.Path); err == nil {
-		if cfg.Here && !cfg.Force {
-			return errors.NewValidationError(
-				"Directory already exists. Use --force to overwrite or specify a different name")
-		}
-		if !cfg.Here {
+	// Check if directory exists - only relevant when creating new project directory
+	if !cfg.Here {
+		// When not using --here, we're creating a new directory that shouldn't exist
+		if _, err := os.Stat(cfg.Path); err == nil {
 			return errors.NewValidationError(
 				fmt.Sprintf("Directory %s already exists", cfg.Path))
 		}
 	}
+	// When using --here, the current directory should exist and we don't need to check
 
 	return nil
 }
